@@ -1,4 +1,10 @@
-"This script must run from a msys shell, not from a Windows CMD shell."
+"This script should run from a msys shell, not from a Windows CMD shell."
+
+# Requires tqdm, requests, and pytest:
+#
+# pip install tqdm
+# pip install pytest
+# pip install requests
 
 import sys
 import os
@@ -14,9 +20,6 @@ import requests
 
 codepath = r"C:\Code"
 toolpath = r"C:\Tools"
-downloads = r"%(USERPROFILE)s\Downloads" % os.environ
-
-logger.info("Download directory: %s", downloads)
 
 
 def make_toolpath():
@@ -28,9 +31,22 @@ def make_toolpath():
 
 def download(url, destpath):
     response = requests.get(url, stream=True)
-    with open(destpath, "wb") as handle:
-        for data in tqdm(response.iter_content()):
-            handle.write(data)
+    length = int(response.headers.get('Content-Length', '0'))
+    chunk_size = pow(2,14)
+    with tqdm(total=length) as tq:
+        with open(destpath, "wb") as handle:
+            for data in response.iter_content(chunk_size):
+                tq.update(len(data))
+                handle.write(data)
+
+def test_download():
+    url = str("https://www.eol.ucar.edu/system/files/software/"
+              "aeros/rhel-6/aeros-4928.rhel6_.tar.gz")
+    url = str("http://www.eol.ucar.edu/system/files/images/book/"
+              "Current%20and%20Upcoming%20Deployments/"
+              "current_deployments_banner.png")
+    download(url, "/dev/null")
+
 
 def mingwinpath(path):
     "Convert a Windows path to mingwin."
@@ -61,6 +77,8 @@ class Package(object):
     def getDownloadFile(self):
         "Derive a local path for the URL and download it if not found."
         filename = self.pfile
+        downloads = r"%(USERPROFILE)s\Downloads" % os.environ
+        logger.info("Download directory: %s", downloads)
         destpath = os.path.join(downloads, filename)
         return self.findOrDownload(self.url, destpath)
 
@@ -132,7 +150,7 @@ make install
 
 _bjam = """
 bjam
- --build-dir=boost-build --toolset=gcc --prefix=/usr/local --build-type=minimal \
+ --build-dir=boost-build --toolset=gcc --prefix=/usr/local --build-type=minimal
  --with-date_time
  --with-test
  --with-serialization
