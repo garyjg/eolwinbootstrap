@@ -39,18 +39,18 @@ def download(url, destpath):
                 tq.update(len(data))
                 handle.write(data)
 
-def test_download():
+def test_download(tmpdir):
     url = str("https://www.eol.ucar.edu/system/files/software/"
               "aeros/rhel-6/aeros-4928.rhel6_.tar.gz")
     url = str("http://www.eol.ucar.edu/system/files/images/book/"
               "Current%20and%20Upcoming%20Deployments/"
               "current_deployments_banner.png")
-    download(url, "/dev/null")
+    download(url, os.path.join(str(tmpdir), "null"))
 
 
 def mingwinpath(path):
     "Convert a Windows path to mingwin."
-    path = re.sub(r"([ABCDEF]):\\", (lambda rx: "/"+rx.group(1).lower()+"/"),
+    path = re.sub(r"([A-Za-z]):\\", (lambda rx: "/"+rx.group(1).lower()+"/"),
                   path)
     path = re.sub(r"\\", "/", path)
     return path
@@ -238,5 +238,6 @@ def test_sourcedir():
 def test_mingwinpath():
     assert(mingwinpath(codepath) == "/c/Code")
     assert(mingwinpath(r"D:\DATA") == "/d/DATA")
+    assert(mingwinpath(r"d:\DATA") == "/d/DATA")
     assert(mingwinpath(r"Users\granger") == "Users/granger")
 
