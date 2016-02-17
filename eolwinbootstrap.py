@@ -105,8 +105,11 @@ class Package(object):
     def getCommands(self):
         return self.commands
 
-    def getSourcePath(self):
-        return os.path.join(codepath, self.srcdir)
+    def getSourcePath(self, sfile=None):
+        path = os.path.join(codepath, self.srcdir)
+        if sfile:
+            path = os.path.join(path, sfile)
+        return path
 
     def unpack(self):
         archive = self.getDownloadFile()
@@ -136,6 +139,33 @@ class Package(object):
             if bp.returncode != 0:
                 sys.exit(1)
 
+
+class Log4cpp(Package):
+
+    def build(self):
+        "Before building, fix the config-MinGW32.h file."
+        self.unpack()
+        self.fixHeaders()
+
+    def editHeader(self, content):
+        content = re.sub(r"/?\*?(#define int64_t __int64)\*?/?",
+                         r"/*\1*/", content)
+        return content
+
+    def fixHeaders(self):
+        ifile = self.getSourcePath("include/log4cpp/config-MinGW32.h")
+        logger.info("Fixing %s" % (ifile))
+        content = None
+        with open(ifile, "rb") as fd:
+            content = fd.read()
+            if not os.path.exists(ifile+".orig"):
+                os.rename(ifile, ifile+".orig")
+            content = self.editHeader(content)
+        if content:
+            with open(ifile, "wb") as fd:
+                fd.write(content)
+        Package.build(self)
+
 # log4cpp: I considered cloning the codegit code from sourforge, but then
 # we do not get the generated configure script, and I would rather not have
 # to install the auto tools on msys also.  So stick with the package
@@ -162,8 +192,17 @@ bjam
  install
 """
 
+# the log4cpp configure check for pthreads fails with errors about redefining
+# struct timespec, so circumvent that by defining _TIMESPEC_DEFINED.  Likewise
+# code in log4cpp/include/log4cpp/config-MinGW32.h tries to define 
+_log4cpp_112 = """
+env CPPFLAGS="-D_TIMESPEC_DEFINED -DLOG4CPP_HAVE_INT64_T" sh ./configure --enable-static --disable-shared --prefix=/usr/local
+make
+make install
+"""
+
 _log4cpp = """
-sh ./configure --enable-static --disable-shared --prefix=/usr/local
+env CPPFLAGS="-D_TIMESPEC_DEFINED" sh ./configure --enable-static --disable-shared --prefix=/usr/local
 make
 make install
 """
@@ -177,7 +216,14 @@ pkglist = [
     Package("xerces-c", 
             "http://mirror.reverse.net/pub/apache//xerces/c/3/sources/"
             "xerces-c-3.1.2.tar.gz").setCommands(_xerces_cmds),
-    Package("log4cpp",
+    Log4cpp("log4cpp", "http://downloads.sourceforge.net/project/log4cpp/"
+            "log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.tar.gz?"
+            "r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Flog4cpp"
+            "%2Ffiles%2Flog4cpp-1.1.x%2520%2528new%2529%2Flog4cpp-1.1%2F"
+            "&ts=1455745885&use_mirror=iweb",
+            "log4cpp-1.1.tar.gz",
+            srcdir="log4cpp").setCommands(_log4cpp),
+    Package("log4cpp-1.1.2rc1",
             "http://downloads.sourceforge.net/project/log4cpp/log4cpp-1.1.x"
             "%20%28new%29/log4cpp-1.1/log4cpp-1.1.2rc1.tar.gz?r="
             "https%3A%2F%2Fsourceforge.net%2Fprojects%2Flog4cpp%2Ffiles%2F&ts="
@@ -241,3 +287,30 @@ def test_mingwinpath():
     assert(mingwinpath(r"d:\DATA") == "/d/DATA")
     assert(mingwinpath(r"Users\granger") == "Users/granger")
 
+_header = """
+/* define if the compiler has int64_t */
+#ifndef LOG4CPP_HAVE_INT64_T
+#define LOG4CPP_HAVE_INT64_T
+#define int64_t __int64
+
+/* define if the compiler has in_addr_t */
+#ifndef LOG4CPP_HAVE_IN_ADDR_T
+#define LOG4CPP_HAVE_IN_ADDR_T
+"""
+_fixed_header = """
+/* define if the compiler has int64_t */
+#ifndef LOG4CPP_HAVE_INT64_T
+#define LOG4CPP_HAVE_INT64_T
+/*#define int64_t __int64*/
+
+/* define if the compiler has in_addr_t */
+#ifndef LOG4CPP_HAVE_IN_ADDR_T
+#define LOG4CPP_HAVE_IN_ADDR_T
+"""
+
+def test_fix_header():
+    pkg = Log4cpp("x", "x", "x")
+    content = pkg.editHeader(_header)
+    assert(content == _fixed_header)
+    content = pkg.editHeader(content)
+    assert(content == _fixed_header)
