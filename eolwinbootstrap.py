@@ -56,6 +56,50 @@ def mingwinpath(path):
     return path
 
 
+class SubPatch(object):
+    """
+    A SubPatch designates a file in the source tree which must be patched
+    using a regex substitution.
+    """
+    def __init__(self, sfile, subs):
+        """
+        Keep a list of (pattern, repl) tuples to be applied to
+        sfile to patch it.
+        """ 
+        self.sfile = sfile
+        self.subs = subs
+
+    def editContent(self, content, settings={}):
+        for sub in self.subs:
+            pattern = sub[0] % settings
+            repl = sub[1] % settings
+            content = re.sub(pattern, repl, content,
+                             count=0, flags=re.MULTILINE)
+        return content
+
+    def backupFile(self, efile):
+        bak = efile+".orig"
+        if not os.path.exists(bak):
+            try:
+                os.rename(efile, bak)
+                logger.info("Backed up %s to %s" % (efile, bak))
+            except WindowsError, e:
+                logger.error("Cannot make backup file: %s" % str(e))
+        else:
+            logger.info("Backup already exists: %s" % (bak))
+
+    def apply(self, pkg):
+        efile = pkg.getSourcePath(self.sfile)
+        logger.info("Fixing %s" % (efile))
+        content = None
+        with open(efile, "rb") as fd:
+            content = fd.read()
+        self.backupFile(efile)
+        content = self.editContent(content, pkg.settings)
+        with open(efile, "wb") as fd:
+            fd.write(content)        
+
+
 class Package(object):
 
     def __init__(self, name, url, pfile=None, srcdir=None):
@@ -64,6 +108,8 @@ class Package(object):
         self.pfile = pfile
         self.srcdir = srcdir
         self.commands = None
+        self.patches = []
+        self.settings = {}
         if not self.pfile:
             self.pfile = self.fileFromURL(self.url)
         if not self.srcdir:
@@ -73,6 +119,10 @@ sh ./configure --prefix=/usr/local
 make
 make install
 """)
+
+    def update(self, variables):
+        "Update the settings dictionary."
+        self.settings.update(variables)
 
     def fileFromURL(self, url):
         return os.path.basename(url)
@@ -114,13 +164,45 @@ make install
     def getCommands(self):
         return self.commands
 
+    def runCommand(self, cmd, cwd):
+        cstring = ""
+        if cwd:
+            cstring = "CMD=%s " % (cwd)
+        if isinstance(cmd, str):
+            cmd = cmd % self.settings
+            cstring += cmd
+        else:
+            cmd = [c % self.settings for c in cmd]
+            cstring += " ".join(cmd)
+        logger.info(cstring)
+        xp = sp.Popen(cmd, cwd=cwd)
+        xp.wait()
+        return xp
+
+    def setPatches(self, patches):
+        self.patches = patches
+        return self
+       
     def getSourcePath(self, sfile=None):
         path = os.path.join(codepath, self.srcdir)
         if sfile:
             path = os.path.join(path, sfile)
         return path
 
+    def checkoutSubversion(self):
+        "Use the URL as a subversion repo to checkout."
+        srcdir = self.getSourcePath()
+        if os.path.exists(srcdir):
+            # For now, do not automatically update.
+            logger.info("%s: checkout exists: %s" % (self.name, srcdir))
+            return
+        cmd = ['svn', 'co', self.url, self.srcdir]
+        svn = self.runCommand(cmd, codepath)
+
     def unpack(self):
+        if 'svn.' in self.url:
+            self.checkoutSubversion()
+            return
         archive = self.getDownloadFile()
         srcdir = self.getSourcePath()
         if os.path.exists(srcdir):
@@ -129,53 +211,28 @@ make install
             logger.info("%s: %s does not exist, extracting..." %
                         (self.name, srcdir))
             cmd = self.getUnpackCommand(archive)
-            logger.info(" ".join(cmd))
-            xp = sp.Popen(cmd, cwd=codepath)
-            xp.wait()
+            xp = self.runCommand(cmd, codepath)
             if xp.returncode == 2 and cmd[0] == "tar":
                 logger.info("ignoring exit code 2 from tar")
             elif xp.returncode != 0:
                 sys.exit(1)
 
+    def applyPatches(self):
+        for p in self.patches:
+            p.apply(self)
+
     def build(self):
         self.unpack()
+        self.applyPatches()
         srcdir = self.getSourcePath()
         if not os.path.exists("/usr/local"):
             os.mkdir("/usr/local")
         cmds = self.getCommands()
         for cmd in cmds:
-            logger.info("CWD=" + srcdir + " " + cmd)
-            bp = sp.Popen(cmd, cwd=srcdir)
-            bp.wait()
+            bp = self.runCommand(cmd, srcdir)
             if bp.returncode != 0:
                 sys.exit(1)
 
-
-class Log4cpp(Package):
-
-    def build(self):
-        "Before building, fix the config-MinGW32.h file."
-        self.unpack()
-        self.fixHeaders()
-
-    def editHeader(self, content):
-        content = re.sub(r"/?\*?(#define int64_t __int64)\*?/?",
-                         r"/*\1*/", content)
-        return content
-
-    def fixHeaders(self):
-        ifile = self.getSourcePath("include/log4cpp/config-MinGW32.h")
-        logger.info("Fixing %s" % (ifile))
-        content = None
-        with open(ifile, "rb") as fd:
-            content = fd.read()
-            if not os.path.exists(ifile+".orig"):
-                os.rename(ifile, ifile+".orig")
-            content = self.editHeader(content)
-        if content:
-            with open(ifile, "wb") as fd:
-                fd.write(content)
-        Package.build(self)
 
 # log4cpp: I considered cloning the codegit code from sourforge, but then
 # we do not get the generated configure script, and I would rather not have
@@ -218,22 +275,57 @@ make
 make install
 """
 
+_log4cpp_patches = [
+    SubPatch("include/log4cpp/config-MinGW32.h",
+             [(r"/?\*?(#define int64_t __int64)\*?/?", r"/*\1*/")]),
+    ]
+
+
+qwt = Package('qwt',
+              'https://svn.code.sf.net/p/qwt/code/branches/qwt-6.0')
+qwt.update({'QWTDIR':'C:/Tools/MinGW/msys/1.0/local/qwt',
+            'QTDIR':'C:/Tools/Qt/4.6.2'})
+qwt.setPatches([
+    SubPatch("qwtconfig.pri",
+        [(r"^(\s*)QWT_INSTALL_PREFIX(\s*)=.*$",
+          r"\1QWT_INSTALL_PREFIX\2= %(QWTDIR)s"),
+         (r"^\s*(QWT_CONFIG\s*\+= QwtDll)\s*$", r"# \1"),
+         (r"^\s*(QWT_CONFIG\s*\+= QwtDesigner)\s*$", r"# \1"),
+         (r"^\s*(QWT_CONFIG\s*\+= QwtExamples)\s*$", r"# \1")])
+]).setCommands("""
+mkdir -p %(QWTDIR)s/lib %(QWTDIR)s/lib %(QWTDIR)s/lib64
+env QTDIR=%(QTDIR)s qmake -nocache -r QMAKE_MOC=%(QTDIR)s/bin/moc -spec win32-g++
+make
+make install
+""")
+
 pkglist = [
     Package("rapidee",
             "http://www.rapidee.com/download/RapidEE_setup.exe"),
     Package("qt",
             "https://download.qt.io/archive/qt/4.6/"
             "qt-win-opensource-4.6.2-mingw.exe"),
+    # This is the latest Qt 4 available, but it requires MinGQ with
+    # gcc 4.8.2, whereas the latest MinGW GCC tools package seems to be
+    # gcc 4.8.1.
+    Package("qt-4.8.6-gcc-4.8.2",
+            "https://download.qt.io/archive/qt/4.6/"
+            "qt-win-opensource-4.6.4-mingw.exe"),
+    Package("qt-4.8.5",
+            "https://download.qt.io/archive/qt/4.8/4.8.5/"
+            "qt-win-opensource-4.8.5-mingw.exe"),
     Package("xerces-c", 
             "http://mirror.reverse.net/pub/apache//xerces/c/3/sources/"
             "xerces-c-3.1.2.tar.gz").setCommands(_xerces_cmds),
-    Log4cpp("log4cpp", "http://downloads.sourceforge.net/project/log4cpp/"
+    Package("log4cpp", "http://downloads.sourceforge.net/project/log4cpp/"
             "log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.tar.gz?"
             "r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Flog4cpp"
             "%2Ffiles%2Flog4cpp-1.1.x%2520%2528new%2529%2Flog4cpp-1.1%2F"
             "&ts=1455745885&use_mirror=iweb",
             "log4cpp-1.1.tar.gz",
-            srcdir="log4cpp").setCommands(_log4cpp),
+            srcdir="log4cpp")
+            .setCommands(_log4cpp)
+            .setPatches(_log4cpp_patches),
     Package("log4cpp-1.1.2rc1",
             "http://downloads.sourceforge.net/project/log4cpp/log4cpp-1.1.x"
             "%20%28new%29/log4cpp-1.1/log4cpp-1.1.2rc1.tar.gz?r="
@@ -256,8 +348,13 @@ pkglist = [
     Package('proj.4',
             'http://download.osgeo.org/proj/proj-4.8.0.tar.gz'),
     Package('geos',
-            "http://download.osgeo.org/geos/geos-3.5.0.tar.bz2"),
-            
+            "http://download.osgeo.org/geos/"
+            "geos-3.5.0.tar.bz2").setCommands("""
+env CPPFLAGS=-D__NO_INLINE__ sh ./configure --prefix=/usr/local
+make
+make install
+"""),
+    qwt,
 ]
 
 pkgmap = { pkg.name:pkg for pkg in pkglist }
@@ -265,6 +362,15 @@ pkgmap = { pkg.name:pkg for pkg in pkglist }
 
 aspen_packages = ['sqlite', 'proj.4', 'geos']
 # ['iconv', 'freexl', 'spatialite', 'libecbufr', 'kermit']
+
+# ASPEN build notes:
+#
+# git clone git@github:/ncareol/aspen.git
+# cd aspen/Aspen
+# git submodule update --init
+# cp config_windows.py config.py
+# /c/python2.7/Scripts/scons.py
+
 
 def build_xercesc():
     pkg = pkgmap["xerces-c"]
@@ -329,8 +435,42 @@ _fixed_header = """
 """
 
 def test_fix_header():
-    pkg = Log4cpp("x", "x", "x")
-    content = pkg.editHeader(_header)
+    patch = _log4cpp_patches[0]
+    content = patch.editContent(_header)
     assert(content == _fixed_header)
-    content = pkg.editHeader(content)
+    content = patch.editContent(content)
     assert(content == _fixed_header)
+
+
+_qwt_pri = """
+QWT_INSTALL_PREFIX = $$[QT_INSTALL_PREFIX]
+
+unix {
+    QWT_INSTALL_PREFIX    = /usr/local/qwt-$$QWT_VERSION-svn
+}
+
+win32 {
+    QWT_INSTALL_PREFIX    = C:/Qwt-$$QWT_VERSION-svn
+}
+"""
+
+_qwt_pri_fixed = """
+QWT_INSTALL_PREFIX = C:/Tools/MinGW/msys/1.0/local/qwt
+
+unix {
+    QWT_INSTALL_PREFIX    = C:/Tools/MinGW/msys/1.0/local/qwt
+}
+
+win32 {
+    QWT_INSTALL_PREFIX    = C:/Tools/MinGW/msys/1.0/local/qwt
+}
+"""
+
+def test_qwt_pri():
+    patch = qwt.patches[0]
+    assert(qwt.settings['QWTDIR'] == 'C:/Tools/MinGW/msys/1.0/local/qwt')
+    content = patch.editContent(_qwt_pri, qwt.settings)
+    assert(content == _qwt_pri_fixed)
+    content = patch.editContent(content, qwt.settings)
+    assert(content == _qwt_pri_fixed)
+
