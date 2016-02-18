@@ -32,7 +32,7 @@ def make_toolpath():
 def download(url, destpath):
     response = requests.get(url, stream=True)
     length = int(response.headers.get('Content-Length', '0'))
-    chunk_size = pow(2,14)
+    chunk_size = pow(2, 14)
     with tqdm(total=length) as tq:
         with open(destpath, "wb") as handle:
             for data in response.iter_content(chunk_size):
@@ -69,10 +69,13 @@ class SubPatch(object):
         self.sfile = sfile
         self.subs = subs
 
-    def editContent(self, content, settings={}):
+    def editContent(self, content, settings=None):
         for sub in self.subs:
-            pattern = sub[0] % settings
-            repl = sub[1] % settings
+            pattern = sub[0]
+            repl = sub[1]
+            if settings:
+                pattern = pattern % settings
+                repl = repl % settings
             content = re.sub(pattern, repl, content,
                              count=0, flags=re.MULTILINE)
         return content
@@ -83,7 +86,7 @@ class SubPatch(object):
             try:
                 os.rename(efile, bak)
                 logger.info("Backed up %s to %s" % (efile, bak))
-            except WindowsError, e:
+            except OSError, e:
                 logger.error("Cannot make backup file: %s" % str(e))
         else:
             logger.info("Backup already exists: %s" % (bak))
@@ -197,7 +200,7 @@ make install
             logger.info("%s: checkout exists: %s" % (self.name, srcdir))
             return
         cmd = ['svn', 'co', self.url, self.srcdir]
-        svn = self.runCommand(cmd, codepath)
+        svn_ = self.runCommand(cmd, codepath)
 
     def unpack(self):
         if 'svn.' in self.url:
@@ -287,17 +290,28 @@ qwt.update({'QWTDIR':'C:/Tools/MinGW/msys/1.0/local/qwt',
             'QTDIR':'C:/Tools/Qt/4.6.2'})
 qwt.setPatches([
     SubPatch("qwtconfig.pri",
-        [(r"^(\s*)QWT_INSTALL_PREFIX(\s*)=.*$",
-          r"\1QWT_INSTALL_PREFIX\2= %(QWTDIR)s"),
-         (r"^\s*(QWT_CONFIG\s*\+= QwtDll)\s*$", r"# \1"),
-         (r"^\s*(QWT_CONFIG\s*\+= QwtDesigner)\s*$", r"# \1"),
-         (r"^\s*(QWT_CONFIG\s*\+= QwtExamples)\s*$", r"# \1")])
+             [(r"^(\s*)QWT_INSTALL_PREFIX(\s*)=.*$",
+               r"\1QWT_INSTALL_PREFIX\2= %(QWTDIR)s"),
+              (r"^\s*(QWT_CONFIG\s*\+= QwtDll)\s*$", r"# \1"),
+              (r"^\s*(QWT_CONFIG\s*\+= QwtDesigner)\s*$", r"# \1"),
+              (r"^\s*(QWT_CONFIG\s*\+= QwtExamples)\s*$", r"# \1")])
 ]).setCommands("""
 mkdir -p %(QWTDIR)s/lib %(QWTDIR)s/lib %(QWTDIR)s/lib64
 env QTDIR=%(QTDIR)s qmake -nocache -r QMAKE_MOC=%(QTDIR)s/bin/moc -spec win32-g++
 make
 make install
 """)
+
+log4cpp = Package("log4cpp",
+                  "http://downloads.sourceforge.net/project/log4cpp/"
+                  "log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.tar.gz?"
+                  "r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Flog4cpp"
+                  "%2Ffiles%2Flog4cpp-1.1.x%2520%2528new%2529%2Flog4cpp-1.1%2F"
+                  "&ts=1455745885&use_mirror=iweb",
+                  "log4cpp-1.1.tar.gz",
+                  srcdir="log4cpp")
+log4cpp.setCommands(_log4cpp)
+log4cpp.setPatches(_log4cpp_patches)
 
 pkglist = [
     Package("rapidee",
@@ -317,15 +331,7 @@ pkglist = [
     Package("xerces-c", 
             "http://mirror.reverse.net/pub/apache//xerces/c/3/sources/"
             "xerces-c-3.1.2.tar.gz").setCommands(_xerces_cmds),
-    Package("log4cpp", "http://downloads.sourceforge.net/project/log4cpp/"
-            "log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.tar.gz?"
-            "r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Flog4cpp"
-            "%2Ffiles%2Flog4cpp-1.1.x%2520%2528new%2529%2Flog4cpp-1.1%2F"
-            "&ts=1455745885&use_mirror=iweb",
-            "log4cpp-1.1.tar.gz",
-            srcdir="log4cpp")
-            .setCommands(_log4cpp)
-            .setPatches(_log4cpp_patches),
+    log4cpp,
     Package("log4cpp-1.1.2rc1",
             "http://downloads.sourceforge.net/project/log4cpp/log4cpp-1.1.x"
             "%20%28new%29/log4cpp-1.1/log4cpp-1.1.2rc1.tar.gz?r="
@@ -357,7 +363,7 @@ make install
     qwt,
 ]
 
-pkgmap = { pkg.name:pkg for pkg in pkglist }
+pkgmap = {pkg.name:pkg for pkg in pkglist}
 
 
 aspen_packages = ['sqlite', 'proj.4', 'geos']
@@ -382,14 +388,7 @@ def build_xercesc():
 # http://unattended.sourceforge.net/installers.php
 
 
-boostpath = os.path.join(codepath, "boost_1_42_0")
-
-def build_boost():
-    os.chdir(boostpath)
-    os.execvp("bjam", bjam.strip().split())
-    
-
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.DEBUG)
     make_toolpath()
     for pname in sys.argv[1:]:
@@ -400,6 +399,8 @@ if __name__ == "__main__":
             logger.info("Building package: %s" % (pname))
             pkg.build()
 
+if __name__ == "__main__":
+    main()
 
 
 def test_sourcedir():
