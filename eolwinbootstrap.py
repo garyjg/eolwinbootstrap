@@ -63,16 +63,22 @@ class Package(object):
         self.url = url
         self.pfile = pfile
         self.srcdir = srcdir
+        self.commands = None
         if not self.pfile:
             self.pfile = self.fileFromURL(self.url)
         if not self.srcdir:
             self.srcdir = self.sourceDirFromPackageFile(self.pfile)
+        self.setCommands("""
+sh ./configure --prefix=/usr/local
+make
+make install
+""")
 
     def fileFromURL(self, url):
         return os.path.basename(url)
 
     def sourceDirFromPackageFile(self, pfile):
-        return re.sub(r"(\.tar\.gz|\.7z|\.exe|\.zip|\.bz2)$", "", pfile)
+        return re.sub(r"(\.tar\.gz|\.7z|\.exe|\.zip|\.tar\.bz2)$", "", pfile)
     
     def getDownloadFile(self):
         "Derive a local path for the URL and download it if not found."
@@ -93,9 +99,12 @@ class Package(object):
 
     def getUnpackCommand(self, archive):
         if archive.endswith(".tar.gz"):
-            return ["tar", "xzf", mingwinpath(archive)]
+            return ["tar", "--no-same-owner", "-xzf", mingwinpath(archive)]
         if archive.endswith(".7z"):
             return ["7z", "x", archive]
+        if archive.endswith(".tar.bz2"):
+            return ["tar", "--bzip2", "--no-same-owner",
+                    "-xf", mingwinpath(archive)]
         return None
 
     def setCommands(self, text):
@@ -123,7 +132,9 @@ class Package(object):
             logger.info(" ".join(cmd))
             xp = sp.Popen(cmd, cwd=codepath)
             xp.wait()
-            if xp.returncode != 0:
+            if xp.returncode == 2 and cmd[0] == "tar":
+                logger.info("ignoring exit code 2 from tar")
+            elif xp.returncode != 0:
                 sys.exit(1)
 
     def build(self):
@@ -239,11 +250,21 @@ pkglist = [
             "http://downloads.sourceforge.net/project/boost/boost/1.42.0/"
             "boost_1_42_0.7z?r=https%3A%2F%2Fsourceforge.net%2Fprojects%2F"
             "boost%2Ffiles%2Fboost%2F1.42.0%2F&ts=1455655701&use_mirror=iweb",
-            "boost_1_42_0.7z").setCommands(" ".join(_bjam.strip().split()))
+            "boost_1_42_0.7z").setCommands(" ".join(_bjam.strip().split())),
+    Package("sqlite",
+            "http://www.sqlite.org/2016/sqlite-autoconf-3110000.tar.gz"),
+    Package('proj.4',
+            'http://download.osgeo.org/proj/proj-4.8.0.tar.gz'),
+    Package('geos',
+            "http://download.osgeo.org/geos/geos-3.5.0.tar.bz2"),
+            
 ]
 
 pkgmap = { pkg.name:pkg for pkg in pkglist }
 
+
+aspen_packages = ['sqlite', 'proj.4', 'geos']
+# ['iconv', 'freexl', 'spatialite', 'libecbufr', 'kermit']
 
 def build_xercesc():
     pkg = pkgmap["xerces-c"]
@@ -265,14 +286,13 @@ def build_boost():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     make_toolpath()
-    pkg = None
-    if len(sys.argv) > 1:
-        pname = sys.argv[1]
+    for pname in sys.argv[1:]:
         pkg = pkgmap.get(pname)
         if not pkg:
-            print("No such package: %s" % (pname))
-    if pkg:
-        pkg.build()
+            logger.error("No such package: %s" % (pname))
+        else:
+            logger.info("Building package: %s" % (pname))
+            pkg.build()
 
 
 
