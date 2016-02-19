@@ -391,7 +391,13 @@ make install
 """),
     qwt,
     netcdf,
-    netcdfcxx
+    netcdfcxx,
+    Package('libecbufr',
+            'http://svn.eol.ucar.edu/svn/eol/imports/libecbufr/trunk',
+            srcdir='libecbufr').setCommands("""
+env LDFLAGS="-lintl" sh ./configure --prefix=/usr/local
+make install
+""")
 ]
 
 pkgmap = {pkg.name:pkg for pkg in pkglist}
