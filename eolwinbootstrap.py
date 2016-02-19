@@ -172,7 +172,10 @@ make install
         return None
 
     def setCommands(self, text):
-        self.commands = text.strip().splitlines()
+        if text is None:
+            self.commands = []
+        else:
+            self.commands = text.strip().splitlines()
         return self
 
     def getCommands(self):
@@ -342,6 +345,19 @@ make
 make install
 """)
 
+b2opts="""
+threading=multi
+toolset=gcc
+variant=release
+link=static
+runtime-link=static
+--prefix=C:/Tools/MinGW/msys/1.0/local
+--layout=system
+--build-type=minimal
+--reconfigure
+"""
+b2opts=" ".join(b2opts.split())
+
 pkglist = [
     Package("rapidee",
             "http://www.rapidee.com/download/RapidEE_setup.exe"),
@@ -373,11 +389,17 @@ pkglist = [
     Package("git",
             "https://github.com/git-for-windows/git/releases/download/"
             "v2.7.1.windows.1/Git-2.7.1-32-bit.exe"),
-    Package("boost",
+    Package("boost-1.42.0",
             "http://downloads.sourceforge.net/project/boost/boost/1.42.0/"
             "boost_1_42_0.7z?r=https%3A%2F%2Fsourceforge.net%2Fprojects%2F"
             "boost%2Ffiles%2Fboost%2F1.42.0%2F&ts=1455655701&use_mirror=iweb",
             "boost_1_42_0.7z").setCommands(" ".join(_bjam.strip().split())),
+    Package("boost-1.60.0",
+            "boost_1_60_0.tar.bz2",
+            "boost_1_60_0.tar.bz2").setCommands("""
+cmd /c "bootstrap.bat mingw"
+b2 %s install
+""" % (b2opts)),
     Package("sqlite",
             "http://www.sqlite.org/2016/sqlite-autoconf-3110000.tar.gz"),
     Package('proj.4',
