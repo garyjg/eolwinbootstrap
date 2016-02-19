@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 from tqdm import tqdm
 import requests
+import urllib 
 
 
 codepath = r"C:\Code"
@@ -29,7 +30,7 @@ def make_toolpath():
     else:
         logger.info("Directory %s already exists.", toolpath)
 
-def download(url, destpath):
+def downloadhttp(url, destpath):
     response = requests.get(url, stream=True)
     length = int(response.headers.get('Content-Length', '0'))
     chunk_size = pow(2, 14)
@@ -38,6 +39,16 @@ def download(url, destpath):
             for data in response.iter_content(chunk_size):
                 tq.update(len(data))
                 handle.write(data)
+
+def downloadftp(url, destpath):
+    urllib.urlretrieve(url, destpath)
+
+def download(url, destpath):
+    if url.startswith('ftp:'):
+        downloadftp(url, destpath)
+    else:
+        downloadhttp(url, destpath)
+
 
 def test_download(tmpdir):
     url = str("https://www.eol.ucar.edu/system/files/software/"
@@ -313,6 +324,24 @@ log4cpp = Package("log4cpp",
 log4cpp.setCommands(_log4cpp)
 log4cpp.setPatches(_log4cpp_patches)
 
+netcdf = Package("netcdf",
+                 "ftp://ftp.unidata.ucar.edu/pub/netcdf/old/"
+                 "netcdf-4.2.1.tar.gz")
+netcdf.setCommands("""
+sh ./configure --disable-netcdf-4 --disable-shared --prefix=/usr/local
+make
+make install
+""")
+
+netcdfcxx = Package("netcdf-cxx",
+                    "ftp://ftp.unidata.ucar.edu/pub/netcdf/"
+                    "netcdf-cxx-4.2.tar.gz")
+netcdfcxx.setCommands("""
+sh ./configure --disable-shared --prefix=/usr/local CPPFLAGS="-I /usr/local/include"
+make
+make install
+""")
+
 pkglist = [
     Package("rapidee",
             "http://www.rapidee.com/download/RapidEE_setup.exe"),
@@ -361,12 +390,14 @@ make
 make install
 """),
     qwt,
+    netcdf,
+    netcdfcxx
 ]
 
 pkgmap = {pkg.name:pkg for pkg in pkglist}
 
 
-aspen_packages = ['sqlite', 'proj.4', 'geos']
+aspen_packages = ['sqlite', 'proj.4', 'geos', 'netcdf', 'netcdfcxx']
 # ['iconv', 'freexl', 'spatialite', 'libecbufr', 'kermit']
 
 # ASPEN build notes:
