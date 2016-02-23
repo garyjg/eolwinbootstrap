@@ -21,7 +21,7 @@ import urllib
 
 codepath = r"C:\Code"
 toolpath = r"C:\Tools"
-
+usrlocalpath = r"C:\Tools\MinGW\msys\1.0\local" 
 
 def make_toolpath():
     if not os.path.exists(toolpath):
@@ -242,8 +242,8 @@ make install
         self.unpack()
         self.applyPatches()
         srcdir = self.getSourcePath()
-        if not os.path.exists("/usr/local"):
-            os.mkdir("/usr/local")
+        if not os.path.exists(usrlocalpath):
+            os.mkdir(usrlocalpath)
         cmds = self.getCommands()
         for cmd in cmds:
             bp = self.runCommand(cmd, srcdir)
@@ -314,6 +314,8 @@ mkdir -p %(QWTDIR)s/lib %(QWTDIR)s/lib %(QWTDIR)s/lib64
 env QTDIR=%(QTDIR)s qmake -nocache -r QMAKE_MOC=%(QTDIR)s/bin/moc -spec win32-g++
 make
 make install
+mkdir -p %(QWTDIR)s/include/qwt
+mv %(QWTDIR)s/include/*.h %(QWTDIR)s/include/qwt
 """)
 
 log4cpp = Package("log4cpp",
@@ -342,6 +344,19 @@ netcdfcxx = Package("netcdf-cxx",
 netcdfcxx.setCommands("""
 sh ./configure --disable-shared --prefix=/usr/local CPPFLAGS="-I /usr/local/include"
 make
+make install
+""")
+
+libspatialite = Package("libspatialite",
+                        "http://www.gaia-gis.it/gaia-sins/libspatialite-sources/"
+                        "libspatialite-4.3.0a.tar.gz"
+#                        "http://www.gaia-gis.it/gaia-sins/libspatialite-sources/"
+#                        "libspatialite-3.0.1.tar.gz"
+                        )
+libspatialite.setCommands("""
+sh ./configure CPPFLAGS="-I/usr/local/include" """
+"""LDFLAGS="-L/usr/local/lib" --prefix=/usr/local """
+"""--disable-libxml2 --disable-examples
 make install
 """)
 
@@ -402,6 +417,13 @@ b2 %s install
 """ % (b2opts)),
     Package("sqlite",
             "http://www.sqlite.org/2016/sqlite-autoconf-3110000.tar.gz"),
+    Package("freexl",
+            "http://www.gaia-gis.it/gaia-sins/freexl-1.0.2.tar.gz").setCommands("""
+sh ./configure CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib" --prefix=/usr/local
+make
+make install
+"""),
+    libspatialite,
     Package('proj.4',
             'http://download.osgeo.org/proj/proj-4.8.0.tar.gz'),
     Package('geos',
@@ -435,12 +457,6 @@ aspen_packages = ['sqlite', 'proj.4', 'geos', 'netcdf', 'netcdfcxx']
 # git submodule update --init
 # cp config_windows.py config.py
 # /c/python2.7/Scripts/scons.py
-
-
-def build_xercesc():
-    pkg = pkgmap["xerces-c"]
-    pkg.unpack()
-    pkg.build()
 
 
 # Useful reference for attempting unattended installs of some of these packages:
