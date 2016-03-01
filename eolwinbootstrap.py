@@ -446,7 +446,9 @@ make install
             srcdir='libecbufr').setCommands("""
 env LDFLAGS="-lintl" sh ./configure --prefix=/usr/local
 make install
-""")
+"""),
+           Package('bitrock',
+                   'http://installbuilder.bitrock.com/installbuilder-16.1.0-windows-installer.exe')
 ]
 
 pkgmap = {pkg.name:pkg for pkg in pkglist}
