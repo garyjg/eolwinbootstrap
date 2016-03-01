@@ -309,14 +309,16 @@ mv %(QWTDIR)s/include/*.h %(QWTDIR)s/include/qwt
 # used the log4cpp 1.1 package.
 _log4cpp_112 = """
 env CPPFLAGS="-D_TIMESPEC_DEFINED -DLOG4CPP_HAVE_INT64_T" sh ./configure --enable-static --disable-shared --prefix=/usr/local
-make
-make install
+make -C src install
+make -C include install
 """
 
+# The install of man pages fails, presumably because the file names contain
+# colons, so only install the library and header files.
 _log4cpp = """
 env CPPFLAGS="-D_TIMESPEC_DEFINED" sh ./configure --enable-static --disable-shared --prefix=/usr/local
-make
-make install
+make -C src install
+make -C include install
 """
 
 _log4cpp_patches = [
