@@ -251,11 +251,6 @@ make install
                 sys.exit(1)
 
 
-# log4cpp: I considered cloning the codegit code from sourforge, but then
-# we do not get the generated configure script, and I would rather not have
-# to install the auto tools on msys also.  So stick with the package
-# download.
-
 # The xerces configure script must be run explicitly with the msys sh.
 _xerces_cmds = """
 sh ./configure --enable-static --disable-shared --prefix=/usr/local
@@ -277,9 +272,19 @@ bjam
  install
 """
 
-# the log4cpp configure check for pthreads fails with errors about redefining
-# struct timespec, so circumvent that by defining _TIMESPEC_DEFINED.  Likewise
-# code in log4cpp/include/log4cpp/config-MinGW32.h tries to define 
+# log4cpp: I considered cloning the codegit code from sourceforge, but then
+# we do not get the generated configure script, and I would rather not have
+# to install the auto tools on msys also.  So stick with the package
+# download.
+
+# The log4cpp 1.1.2 configure check for pthreads fails with errors about
+# redefining struct timespec, so I tried to circumvent that by defining
+# _TIMESPEC_DEFINED.  Also, code in
+# log4cpp/include/log4cpp/config-MinGW32.h tries to define int64_t, and
+# that causes problems.  However, defining LOG4CPP_HAVE_INT64_T to avoid
+# that definition then suppresses the definition of in_addr_t, and that
+# causes problems.  So in the end I gave up on this approach and instead
+# used the log4cpp 1.1 package.
 _log4cpp_112 = """
 env CPPFLAGS="-D_TIMESPEC_DEFINED -DLOG4CPP_HAVE_INT64_T" sh ./configure --enable-static --disable-shared --prefix=/usr/local
 make
