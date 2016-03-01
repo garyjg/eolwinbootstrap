@@ -272,6 +272,28 @@ bjam
  install
 """
 
+
+qwt = Package('qwt',
+              'https://svn.code.sf.net/p/qwt/code/branches/qwt-6.0')
+qwt.update({'QWTDIR':'C:/Tools/MinGW/msys/1.0/local/qwt',
+            'QTDIR':'C:/Tools/Qt/4.6.2'})
+qwt.setPatches([
+    SubPatch("qwtconfig.pri",
+             [(r"^(\s*)QWT_INSTALL_PREFIX(\s*)=.*$",
+               r"\1QWT_INSTALL_PREFIX\2= %(QWTDIR)s"),
+              (r"^\s*(QWT_CONFIG\s*\+= QwtDll)\s*$", r"# \1"),
+              (r"^\s*(QWT_CONFIG\s*\+= QwtDesigner)\s*$", r"# \1"),
+              (r"^\s*(QWT_CONFIG\s*\+= QwtExamples)\s*$", r"# \1")])
+]).setCommands("""
+mkdir -p %(QWTDIR)s/lib %(QWTDIR)s/lib %(QWTDIR)s/lib64
+env QTDIR=%(QTDIR)s qmake -nocache -r QMAKE_MOC=%(QTDIR)s/bin/moc -spec win32-g++
+make
+make install
+mkdir -p %(QWTDIR)s/include/qwt
+mv %(QWTDIR)s/include/*.h %(QWTDIR)s/include/qwt
+""")
+
+# ----------------------------------------------------------------------
 # log4cpp: I considered cloning the codegit code from sourceforge, but then
 # we do not get the generated configure script, and I would rather not have
 # to install the auto tools on msys also.  So stick with the package
@@ -302,27 +324,6 @@ _log4cpp_patches = [
              [(r"/?\*?(#define int64_t __int64)\*?/?", r"/*\1*/")]),
     ]
 
-
-qwt = Package('qwt',
-              'https://svn.code.sf.net/p/qwt/code/branches/qwt-6.0')
-qwt.update({'QWTDIR':'C:/Tools/MinGW/msys/1.0/local/qwt',
-            'QTDIR':'C:/Tools/Qt/4.6.2'})
-qwt.setPatches([
-    SubPatch("qwtconfig.pri",
-             [(r"^(\s*)QWT_INSTALL_PREFIX(\s*)=.*$",
-               r"\1QWT_INSTALL_PREFIX\2= %(QWTDIR)s"),
-              (r"^\s*(QWT_CONFIG\s*\+= QwtDll)\s*$", r"# \1"),
-              (r"^\s*(QWT_CONFIG\s*\+= QwtDesigner)\s*$", r"# \1"),
-              (r"^\s*(QWT_CONFIG\s*\+= QwtExamples)\s*$", r"# \1")])
-]).setCommands("""
-mkdir -p %(QWTDIR)s/lib %(QWTDIR)s/lib %(QWTDIR)s/lib64
-env QTDIR=%(QTDIR)s qmake -nocache -r QMAKE_MOC=%(QTDIR)s/bin/moc -spec win32-g++
-make
-make install
-mkdir -p %(QWTDIR)s/include/qwt
-mv %(QWTDIR)s/include/*.h %(QWTDIR)s/include/qwt
-""")
-
 log4cpp = Package("log4cpp",
                   "http://downloads.sourceforge.net/project/log4cpp/"
                   "log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.tar.gz?"
@@ -334,6 +335,7 @@ log4cpp = Package("log4cpp",
 log4cpp.setCommands(_log4cpp)
 log4cpp.setPatches(_log4cpp_patches)
 
+# ----------------------------------------------------------------------
 netcdf = Package("netcdf",
                  "ftp://ftp.unidata.ucar.edu/pub/netcdf/old/"
                  "netcdf-4.2.1.tar.gz")
